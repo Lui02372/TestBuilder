@@ -19,7 +19,7 @@ TestBuilder/
 ├── docker-compose.yml  # frontend + backend + ollama + ollama-pull(모델 자동 다운로드)
 ├── .env.example
 └── deploy/
-    ├── ec2-setup.sh    # EC2(Ubuntu)에 Docker 설치하는 스크립트
+    ├── ec2-setup.sh    # EC2(Amazon Linux 2023)에 git/Docker/Compose 설치하는 스크립트
     └── DEPLOY.md       # EC2 배포 절차 (보안그룹, 실행, 확인 방법)
 ```
 
@@ -49,7 +49,7 @@ docker compose logs -f ollama-pull
 
 [deploy/DEPLOY.md](deploy/DEPLOY.md) 참고. 요약:
 
-1. Ubuntu EC2 인스턴스 생성 (t3.medium 이상 권장, 최소 4GB RAM)
+1. Amazon Linux 2023 EC2 인스턴스 생성 (사용자 ec2-user, t3.medium 이상 권장, 최소 4GB RAM)
 2. 보안그룹: 22(SSH), 80(프론트) 오픈 / 11434(Ollama)는 오픈하지 않음
 3. `deploy/ec2-setup.sh` 실행 → Docker 설치
 4. 프로젝트 clone → `.env` 설정 → `docker compose up -d --build`
@@ -68,6 +68,7 @@ pytest -v
 ## 문서
 
 - [doc/docker-command-guide.md](doc/docker-command-guide.md) — Docker / Compose 명령어 학습 가이드
+- [doc/github-actions-concepts.md](doc/github-actions-concepts.md) — CI/CD · GitHub Actions 개념 학습 (동작 원리, ci-cd.yml 해설, 퀴즈)
 - [doc/cicd-guide.md](doc/cicd-guide.md) — GitHub Actions CI/CD (EC2 자동 배포) 설정
 
 ## 다른 모델로 바꾸기

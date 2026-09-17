@@ -141,7 +141,8 @@ gh run watch
 ## 실습 5. EC2 자동 배포 켜기
 
 ### 5-1. EC2 쪽 준비 (1회)
-- [deploy/DEPLOY.md](../deploy/DEPLOY.md) 대로 EC2 에서 `deploy/ec2-setup.sh` 실행 (Docker 설치)
+- [deploy/DEPLOY.md](../deploy/DEPLOY.md) 대로 EC2(Amazon Linux 2023)에서 `deploy/ec2-setup.sh` 실행
+  (git, rsync, Docker, compose/buildx 설치 — **rsync 가 없으면 배포 업로드가 실패**하니 이미 docker 를 깔았어도 한 번 실행)
 - **보안그룹 인바운드 22번을 `0.0.0.0/0`** 으로 변경
   (GitHub Actions 서버 IP 는 매번 바뀌어서 "내 IP" 만 허용하면 ssh 타임아웃)
 - 80번 `0.0.0.0/0` 열려 있는지 확인
@@ -150,7 +151,7 @@ gh run watch
 
 ```powershell
 gh secret set EC2_HOST --repo <GitHub계정>/TestBuilder --body "<EC2_PUBLIC_IP>"
-gh secret set EC2_USER --repo <GitHub계정>/TestBuilder --body "ubuntu"
+gh secret set EC2_USER --repo <GitHub계정>/TestBuilder --body "ec2-user"
 Get-Content .\ec2testkeypair.pem -Raw | gh secret set EC2_SSH_KEY --repo <GitHub계정>/TestBuilder
 
 gh secret list --repo <GitHub계정>/TestBuilder   # 3개 보이면 OK (값은 안 보이는 게 정상)
@@ -178,7 +179,7 @@ ollama     ... Up
 EC2 에서 직접 확인도 해봅니다.
 
 ```powershell
-ssh -i .\ec2testkeypair.pem ubuntu@<EC2_PUBLIC_IP>
+ssh -i .\ec2testkeypair.pem ec2-user@<EC2_PUBLIC_IP>
 ```
 ```bash
 cd ~/TestBuilder && docker compose ps
@@ -247,7 +248,7 @@ gh secret list                    # 시크릿 목록
 | build | `docker compose config` 에러 | compose 들여쓰기/오타 |
 | deploy | 경고 `시크릿이 없어 배포를 건너뜁니다` | 실습 5-2 시크릿 등록 |
 | deploy | `ssh: connect to host ... timed out` | 보안그룹 22번, EC2 중지/재시작으로 IP 바뀜 → `EC2_HOST` 갱신 |
-| deploy | `Permission denied (publickey)` | `EC2_SSH_KEY` 에 pem 전체 내용 들어갔는지, `EC2_USER=ubuntu` |
+| deploy | `Permission denied (publickey)` | `EC2_SSH_KEY` 에 pem 전체 내용 들어갔는지, `EC2_USER=ec2-user` |
 | deploy | `EC2에 Docker가 없습니다` | EC2 에서 `deploy/ec2-setup.sh` 실행 |
-| deploy | `permission denied ... docker.sock` | EC2 에서 `sudo usermod -aG docker ubuntu` 후 재접속 |
+| deploy | `permission denied ... docker.sock` | EC2 에서 `sudo usermod -aG docker ec2-user` 후 재접속 |
 | deploy | `헬스체크 실패` | 로그 아래 backend 로그 확인, EC2 메모리 부족(`docker stats`) |
