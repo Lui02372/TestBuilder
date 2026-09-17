@@ -1,0 +1,54 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+
+  # ollama 서버가 뜨면 지정한 모델을 1회 자동으로 pull하고 종료되는 초기화 컨테이너
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: ollama-pull
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    depends_on:
+      - ollama
+    entrypoint:
+      - sh
+      - -c
+      - >
+        until ollama list >/dev/null 2>&1; do
+          echo 'ollama 서버 기동 대기 중...';
+          sleep 3;
+        done;
+        echo "모델 다운로드 시작: ${OLLAMA_MODEL:-llama3.2:1b}";
+        ollama pull ${OLLAMA_MODEL:-llama3.2:1b};
+        echo '모델 준비 완료';
+    restart: "no"
+
+  backend:
+    build: ./backend
+    container_name: backend
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:1b}
+    depends_on:
+      - ollama
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: frontend
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    restart: unless-stopped
+
+volumes:
+  ollama_data:

@@ -1,0 +1,131 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: # Actions 탭에서 수동 실행
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # 1) 백엔드 단위 테스트
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11" # backend/Dockerfile 과 동일한 버전
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run pytest
+        run: pytest -v
+
+  # 2) docker-compose 문법 검사 + 이미지 빌드 검증
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare .env
+        run: cp .env.example .env
+
+      - name: Validate docker-compose.yml
+        run: docker compose config --quiet
+
+      - name: Build images
+        run: docker compose build backend frontend
+
+  # 3) main 브랜치에 push 되었을 때만 EC2로 배포
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    env:
+      EC2_HOST: ${{ secrets.EC2_HOST }}
+      EC2_USER: ${{ secrets.EC2_USER }}
+      EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+      APP_DIR: TestBuilder # EC2 홈 디렉토리 아래 배포 경로
+    steps:
+      - name: Check secrets
+        id: check
+        run: |
+          if [ -z "$EC2_HOST" ] || [ -z "$EC2_USER" ] || [ -z "$EC2_SSH_KEY" ]; then
+            echo "::warning::EC2_HOST / EC2_USER / EC2_SSH_KEY 시크릿이 없어 배포를 건너뜁니다."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.check.outputs.ready == 'true'
+
+      - name: Setup SSH key
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          mkdir -p ~/.ssh
+          echo "$EC2_SSH_KEY" > ~/.ssh/ec2.pem
+          chmod 600 ~/.ssh/ec2.pem
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload project files (rsync)
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          rsync -az --delete \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            --exclude '.env' \
+            --exclude '.venv/' \
+            --exclude '__pycache__/' \
+            --exclude '.pytest_cache/' \
+            -e "ssh -i ~/.ssh/ec2.pem" \
+            ./ "$EC2_USER@$EC2_HOST:~/$APP_DIR/"
+
+      - name: docker compose up on EC2
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          ssh -i ~/.ssh/ec2.pem "$EC2_USER@$EC2_HOST" APP_DIR="$APP_DIR" bash -s <<'EOF'
+          set -e
+          if ! command -v docker >/dev/null 2>&1; then
+            echo "EC2에 Docker가 없습니다. deploy/ec2-setup.sh 를 먼저 실행하세요." >&2
+            exit 1
+          fi
+          cd ~/"$APP_DIR"
+          [ -f .env ] || cp .env.example .env   # 서버의 .env 는 덮어쓰지 않음
+          docker compose up -d --build --remove-orphans
+          docker image prune -f
+
+          echo "백엔드 헬스체크 대기..."
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/health; then
+              echo ""
+              echo "배포 성공"
+              docker compose ps
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "헬스체크 실패" >&2
+          docker compose ps
+          docker compose logs --tail 50 backend
+          exit 1
+          EOF
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/ec2.pem

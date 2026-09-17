@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>TestBuilder - Ollama Chat Demo</title>
+  <style>
+    body { font-family: sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; }
+    textarea { width: 100%; height: 80px; }
+    button { margin-top: 8px; padding: 8px 16px; }
+    #output { white-space: pre-wrap; border: 1px solid #ccc; padding: 12px; margin-top: 16px; min-height: 60px; }
+    #status { color: #888; font-size: 0.9em; }
+  </style>
+</head>
+<body>
+  <h1>TestBuilder Demo</h1>
+  <p>프론트엔드 → 백엔드(FastAPI) → Ollama 로 이어지는 연결 테스트용 페이지입니다.</p>
+
+  <textarea id="prompt" placeholder="Ollama에게 물어볼 내용을 입력하세요">한국어로 짧게 자기소개 해줘</textarea>
+  <br />
+  <button id="send">전송</button>
+  <div id="status"></div>
+  <div id="output"></div>
+
+  <script>
+    const sendBtn = document.getElementById('send');
+    const promptEl = document.getElementById('prompt');
+    const outputEl = document.getElementById('output');
+    const statusEl = document.getElementById('status');
+
+    sendBtn.addEventListener('click', async () => {
+      const prompt = promptEl.value.trim();
+      if (!prompt) return;
+
+      sendBtn.disabled = true;
+      statusEl.textContent = '요청 중... (첫 응답은 모델 로딩 때문에 오래 걸릴 수 있습니다)';
+      outputEl.textContent = '';
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt }),
+        });
+
+        if (!res.ok) {
+          throw new Error(`서버 오류: ${res.status}`);
+        }
+
+        const data = await res.json();
+        outputEl.textContent = data.response || '(빈 응답)';
+        statusEl.textContent = `모델: ${data.model || '알 수 없음'}`;
+      } catch (err) {
+        outputEl.textContent = '오류: ' + err.message;
+        statusEl.textContent = '';
+      } finally {
+        sendBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
